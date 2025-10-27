@@ -87,4 +87,4 @@ Aplikasi default dapat diakses pada `http://127.0.0.1:8000`.
 
 ---
 
-Untuk kebutuhan deployment/produksi (queue, cache, config, optimize, dll.), silakan beri tahu jika Anda ingin menambahkan panduan lanjutan.
+
