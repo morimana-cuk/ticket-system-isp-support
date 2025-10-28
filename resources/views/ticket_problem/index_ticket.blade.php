@@ -25,7 +25,8 @@
                                 <div class="col-md-8">
                                     <div class="d-flex align-items-center">
                                         <label class="me-2 mb-0">Show:</label>
-                                        <select class="form-select form-select-sm me-3" id="customLength" style="width: auto;">
+                                        <select class="form-select form-select-sm me-3" id="customLength"
+                                            style="width: auto;">
                                             <option value="10">10</option>
                                             <option value="25">25</option>
                                             <option value="50">50</option>
@@ -44,7 +45,8 @@
                                         </select>
                                         <div class="input-group input-group-sm">
                                             <span class="input-group-text">Search:</span>
-                                            <input type="text" class="form-control" id="customSearch" placeholder="Cari...">
+                                            <input type="text" class="form-control" id="customSearch"
+                                                placeholder="Cari...">
                                         </div>
                                     </div>
                                 </div>
@@ -200,6 +202,7 @@
                             $('#view_ticket_number').text(response.ticket_number);
                             $('#view_kode_pelanggan').text(response.kode_pelanggan);
                             $('#view_nama_pelanggan').text(response.nama_pelanggan);
+                            $('#view_alamat_pelanggan').text(response.alamat);
                             $('#view_judul_problem').text(response.judul_problem);
                             $('#view_deskripsi_problem').text(response.deskripsi_problem);
                             $('#view_status').text(response.status == 1 ? 'Open' : (response
@@ -262,10 +265,11 @@
                             $('#edit_deskripsi_problem').val(response.deskripsi_problem);
                             $('#edit_status').val(response.status);
                             $('#edit_prioritas').val(response.prioritas);
-                            
+
                             // Set teknisi in format "PGW001 - Nama Teknisi"
                             if (response.teknisi_kode && response.teknisi_nama) {
-                                $('#edit_teknisi').val(response.teknisi_kode + ' - ' + response.teknisi_nama);
+                                $('#edit_teknisi').val(response.teknisi_kode + ' - ' + response
+                                    .teknisi_nama);
                             } else {
                                 $('#edit_teknisi').val('');
                             }
@@ -426,6 +430,10 @@
                         <p id="view_nama_pelanggan"></p>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label"><strong>Alamat Pelanggan:</strong></label>
+                        <p id="view_alamat_pelanggan"></p>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label"><strong>Judul Problem:</strong></label>
                         <p id="view_judul_problem"></p>
                     </div>
@@ -503,7 +511,8 @@
                         </div>
                         <div class="mb-3">
                             <label for="edit_teknisi" class="form-label">Teknisi</label>
-                            <input class="form-control" id="edit_teknisi" name="teknisi" list="teknisiList" placeholder="-- Cari atau Pilih Teknisi --" required>
+                            <input class="form-control" id="edit_teknisi" name="teknisi" list="teknisiList"
+                                placeholder="-- Cari atau Pilih Teknisi --" required>
                             <datalist id="teknisiList">
                                 <option value="">-- Pilih Teknisi --</option>
                                 @foreach ($pegawai as $tech)

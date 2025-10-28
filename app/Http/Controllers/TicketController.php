@@ -2,25 +2,32 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\pegawai;
 use Illuminate\Http\Request;
-use App\Models\ticket_problem;
-use App\Models\TicketStatusHistory;
 use Illuminate\Support\Facades\Auth;
+use App\Repositories\Contracts\TicketRepositoryInterface;
+use App\Repositories\Contracts\PegawaiRepositoryInterface;
+use App\Repositories\Contracts\TicketStatusHistoryRepositoryInterface;
+use App\Repositories\Contracts\PelangganRepositoryInterface;
 
 class TicketController extends Controller
 {
+    public function __construct(
+        private TicketRepositoryInterface $ticketRepo,
+        private PegawaiRepositoryInterface $pegawaiRepo,
+        private TicketStatusHistoryRepositoryInterface $historyRepo,
+        private PelangganRepositoryInterface $pelangganRepo,
+    ) {}
+
     public function index()
     {
-        $pelangganList = \App\Models\pelanggan::all();
-        $pegawai = pegawai::where('level', 'teknisi')->get();
+        $pelangganList = $this->pelangganRepo->queryForDataTable()->get();
+        $pegawai = $this->pegawaiRepo->getByLevel('teknisi');
         return view('ticket_problem.index_ticket', compact('pelangganList', 'pegawai'));
     }
 
     public function data()
     {
-        // $data = ticket_problem::with('pelanggan')->orderBy('id', 'DESC');
-        $data = ticket_problem::with('pelanggan')->orderBy('created_at', 'DESC');
+        $data = $this->ticketRepo->queryForDataTable();
 
         return datatables()->of($data)
             ->addIndexColumn()
@@ -32,15 +39,12 @@ class TicketController extends Controller
             })
             ->addColumn('status', function ($row) {
                 if ($row->status === 1) {
-                    # code...
                     return '<span class="badge bg-warning">Open</span>';
                 }
                 if ($row->status === 2) {
-                    # code...
                     return '<span class="badge bg-info">In Progress</span>';
                 }
                 if ($row->status === 3) {
-                    # code...
                     return '<span class="badge bg-success">Closed</span>';
                 }
                 return '<span class="badge bg-secondary">Unknown</span>';
@@ -59,20 +63,19 @@ class TicketController extends Controller
             })
             ->addColumn('action', function ($row) {
                 $userRole = Auth::user()->role;
-                $buttons = '<button class="btn btn-sm btn-primary view" data-id="' . $row->ticket_number . '" data-bs-toggle="modal" data-bs-target="#viewTicketModal">
-                        View
-                    </button>';
-                
-                // Edit dan Delete hanya untuk Admin dan NOC
+                $buttons = '<button class="btn btn-sm btn-primary view" data-id="' . $row->ticket_number . '" data-bs-toggle="modal" data-bs-target="#viewTicketModal">'
+                    . 'View'
+                    . '</button>';
+
                 if (in_array($userRole, ['Admin', 'NOC'])) {
-                    $buttons .= ' <button class="btn btn-sm btn-warning edit" data-id="' . $row->ticket_number . '" data-bs-toggle="modal" data-bs-target="#editTicketModal">
-                        Edit
-                    </button>';
-                    $buttons .= ' <button class="btn btn-sm btn-danger delete" data-id="' . $row->ticket_number . '">
-                        Delete
-                    </button>';
+                    $buttons .= ' <button class="btn btn-sm btn-warning edit" data-id="' . $row->ticket_number . '" data-bs-toggle="modal" data-bs-target="#editTicketModal">'
+                        . 'Edit'
+                        . '</button>';
+                    $buttons .= ' <button class="btn btn-sm btn-danger delete" data-id="' . $row->ticket_number . '">'
+                        . 'Delete'
+                        . '</button>';
                 }
-                
+
                 return $buttons;
             })
             ->filter(function ($query) {
@@ -100,29 +103,15 @@ class TicketController extends Controller
         ]);
 
         try {
-            // Generate ticket number otomatis - ambil nilai numerik terbesar
-            $lastTicket = ticket_problem::orderBy('ticket_number', 'DESC')->first();
-            $nextNumber = 1;
-            
-            if ($lastTicket) {
-                // Extract number dari ticket_number (TKT00001 -> 00001)
-                $lastNumber = intval(substr($lastTicket->ticket_number, 3));
-                $nextNumber = $lastNumber + 1;
-            }
-            
-            $ticketNumber = 'TKT' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
-
-            $ticket = ticket_problem::create([
-                'ticket_number' => $ticketNumber,
+            $ticket = $this->ticketRepo->createWithAutoNumber([
                 'pelanggan_id' => $validated['pelanggan_id'],
                 'judul_problem' => $validated['judul_problem'],
                 'deskripsi_problem' => $validated['deskripsi_problem'],
-                'status' => 1, // Default Open
-                'prioritas' => 1, // Default Low
-                // 'created_by' => Auth::id()
+                'status' => 1,
+                'prioritas' => 1,
             ]);
 
-            TicketStatusHistory::create([
+            $this->historyRepo->create([
                 'ticket_number' => $ticket->ticket_number,
                 'status_from' => null,
                 'status_to' => $ticket->status,
@@ -130,18 +119,18 @@ class TicketController extends Controller
                 'notes' => 'Ticket dibuat',
             ]);
 
-            return response()->json(['message' => 'Ticket berhasil dibuat'], 200);
+            return response()->json(['success' => true, 'message' => 'Ticket berhasil dibuat'], 200);
         } catch (\Exception $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
     }
 
     public function edit($id)
     {
         // $id sebenarnya adalah ticket_number
-    $ticket = ticket_problem::with(['statusHistories.user.pegawai'])->where('ticket_number', $id)->first();
+        $ticket = $this->ticketRepo->findWithRelations($id, ['statusHistories.user.pegawai', 'pegawai']);
         if (!$ticket) {
-            return response()->json(['message' => 'Ticket tidak ditemukan'], 404);
+            return response()->json(['success' => false, 'message' => 'Ticket tidak ditemukan'], 404);
         }
         $history = $ticket->statusHistories->map(function ($entry) {
             return [
@@ -174,9 +163,9 @@ class TicketController extends Controller
     public function view($id)
     {
         // $id sebenarnya adalah ticket_number
-        $ticket = ticket_problem::with('statusHistories.user.pegawai', 'pelanggan')->where('ticket_number', $id)->first();
+        $ticket = $this->ticketRepo->findWithRelations($id, ['statusHistories.user.pegawai', 'pelanggan', 'pegawai']);
         if (!$ticket) {
-            return response()->json(['message' => 'Ticket tidak ditemukan'], 404);
+            return response()->json(['success' => false, 'message' => 'Ticket tidak ditemukan'], 404);
         }
 
         $history = $ticket->statusHistories->map(function ($entry) {
@@ -198,6 +187,7 @@ class TicketController extends Controller
             'ticket_number' => $ticket->ticket_number,
             'kode_pelanggan' => $ticket->pelanggan?->kode_pelanggan,
             'nama_pelanggan' => $ticket->pelanggan?->nama_pelanggan,
+            'alamat' => $ticket->pelanggan?->alamat,
             'judul_problem' => $ticket->judul_problem,
             'deskripsi_problem' => $ticket->deskripsi_problem,
             'status' => $ticket->status,
@@ -219,24 +209,23 @@ class TicketController extends Controller
         ]);
 
         try {
-            $ticket = ticket_problem::where('ticket_number', $id)->first();
+            $ticket = $this->ticketRepo->findByTicketNumber($id);
             if (!$ticket) {
-                return response()->json(['message' => 'Ticket tidak ditemukan'], 404);
+                return response()->json(['success' => false, 'message' => 'Ticket tidak ditemukan'], 404);
             }
 
             $originalStatus = $ticket->status;
 
-            $ticket->update([
+            $this->ticketRepo->updateByTicketNumber($id, [
                 'judul_problem' => $validated['judul_problem'],
                 'deskripsi_problem' => $validated['deskripsi_problem'],
                 'status' => $validated['status'],
                 'prioritas' => $validated['prioritas'],
-                // 'updated_by' => Auth::id(),
                 'pegawai_id' => $validated['teknisi'],
             ]);
 
             if ((int) $originalStatus !== (int) $validated['status']) {
-                TicketStatusHistory::create([
+                $this->historyRepo->create([
                     'ticket_number' => $ticket->ticket_number,
                     'status_from' => $originalStatus,
                     'status_to' => $validated['status'],
@@ -245,9 +234,9 @@ class TicketController extends Controller
                 ]);
             }
 
-            return response()->json(['message' => 'Ticket berhasil diupdate'], 200);
+            return response()->json(['success' => true, 'message' => 'Ticket berhasil diupdate'], 200);
         } catch (\Exception $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
     }
 
@@ -255,15 +244,15 @@ class TicketController extends Controller
     {
         // $id sebenarnya adalah ticket_number
         try {
-            $ticket = ticket_problem::where('ticket_number', $id)->first();
+            $ticket = $this->ticketRepo->findByTicketNumber($id);
             if (!$ticket) {
-                return response()->json(['message' => 'Ticket tidak ditemukan'], 404);
+                return response()->json(['success' => false, 'message' => 'Ticket tidak ditemukan'], 404);
             }
 
-            $ticket->delete();
-            return response()->json(['message' => 'Ticket berhasil dihapus'], 200);
+            $this->ticketRepo->deleteByTicketNumber($id);
+            return response()->json(['success' => true, 'message' => 'Ticket berhasil dihapus'], 200);
         } catch (\Exception $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
     }
 

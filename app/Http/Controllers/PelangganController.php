@@ -3,20 +3,25 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Repositories\Contracts\PelangganRepositoryInterface;
+use App\Repositories\Contracts\PaketInternetRepositoryInterface;
 
 class PelangganController extends Controller
 {
-    //
+    public function __construct(
+        private PelangganRepositoryInterface $pelangganRepo,
+        private PaketInternetRepositoryInterface $paketRepo,
+    ) {}
+
     public function index()
     {
-            $paketList = \App\Models\paket_internet::all();
-            return view('pelanggan.index_customer', compact('paketList'));
+        $paketList = $this->paketRepo->all();
+        return view('pelanggan.index_customer', compact('paketList'));
     }
 
     public function data()
     {
-        //
-        $data = \App\Models\pelanggan::with('paketInternet')->orderBy('created_at','DESC');
+        $data = $this->pelangganRepo->queryForDataTable();
 
         return datatables()->of($data)
             ->addIndexColumn()
@@ -44,8 +49,7 @@ class PelangganController extends Controller
                         $q->where('nama_pelanggan', 'like', "%{$searchValue}%")
                           ->orWhere('kode_pelanggan', 'like', "%{$searchValue}%")
                           ->orWhere('email', 'like', "%{$searchValue}%")
-                          ->orWhere('no_telp', 'like', "%{$searchValue}%")
-                          ;
+                          ->orWhere('no_telp', 'like', "%{$searchValue}%");
                     });
                 }
             })
@@ -56,9 +60,9 @@ class PelangganController extends Controller
     public function edit($id)
     {
         // $id sebenarnya adalah kode_pelanggan
-        $pelanggan = \App\Models\pelanggan::where('kode_pelanggan', $id)->first();
+        $pelanggan = $this->pelangganRepo->findByKode($id);
         if (!$pelanggan) {
-            return response()->json(['message' => 'Pelanggan tidak ditemukan'], 404);
+            return response()->json(['success' => false, 'message' => 'Pelanggan tidak ditemukan'], 404);
         }
         return response()->json($pelanggan);
     }
@@ -66,9 +70,9 @@ class PelangganController extends Controller
     public function update($id, Request $request)
     {
         // $id sebenarnya adalah kode_pelanggan
-        $pelanggan = \App\Models\pelanggan::where('kode_pelanggan', $id)->first();
+        $pelanggan = $this->pelangganRepo->findByKode($id);
         if (!$pelanggan) {
-            return response()->json(['message' => 'Pelanggan tidak ditemukan'], 404);
+            return response()->json(['success' => false, 'message' => 'Pelanggan tidak ditemukan'], 404);
         }
 
         $validated = $request->validate([
@@ -78,28 +82,34 @@ class PelangganController extends Controller
             'email' => 'required|email',
             'id_paket' => 'required|exists:paket_internet,kode_paket'
         ]);
-
-        $pelanggan->update([
+        try {
+            //code...
+            $this->pelangganRepo->updateByKode($id, [
             'nama_pelanggan' => $validated['nama_pelanggan'],
             'alamat' => $validated['alamat'],
             'no_telp' => $validated['no_telp'],
             'email' => $validated['email'],
             'paket_id_internet' => $validated['id_paket']
         ]);
+        return response()->json([ 'success' => true, 'message' => 'Pelanggan berhasil diperbarui'], 200);
+        } catch (\Throwable $th) {
+            //throw $th;
+            return response()->json(['success' => false, 'message' => 'Error: ' . $th->getMessage()], 422);
+        }
+        
 
-        return response()->json(['message' => 'Pelanggan berhasil diperbarui', 'data' => $pelanggan], 200);
     }
 
     public function destroy($id)
     {
         // $id sebenarnya adalah kode_pelanggan
-        $pelanggan = \App\Models\pelanggan::where('kode_pelanggan', $id)->first();
+        $pelanggan = $this->pelangganRepo->findByKode($id);
         if (!$pelanggan) {
-            return response()->json(['message' => 'Pelanggan tidak ditemukan'], 404);
+            return response()->json(['success' => false,'success' => false, 'message' => 'Pelanggan tidak ditemukan'], 404);
         }
 
-        $pelanggan->delete();
-        return response()->json(['message' => 'Pelanggan berhasil dihapus'], 200);
+        $this->pelangganRepo->deleteByKode($id);
+        return response()->json(['success' => true, 'message' => 'Pelanggan berhasil dihapus'], 200);
     }
 
     public function store(Request $request)
@@ -114,28 +124,16 @@ class PelangganController extends Controller
 
         try {
             // Verifikasi paket ada di database
-            $paket = \App\Models\paket_internet::where('kode_paket', $validated['id_paket'])->first();
+            $paket = $this->paketRepo->findByKode($validated['id_paket']);
             if (!$paket) {
                 return response()->json([
+                    'success' => false,
                     'message' => 'Paket Internet tidak valid. Silahkan pilih paket yang tersedia.',
                     'errors' => ['id_paket' => ['Paket Internet tidak ditemukan dalam database']]
                 ], 422);
             }
 
-            // Generate kode pelanggan otomatis - ambil nilai numerik terbesar
-            $lastPelanggan = \App\Models\pelanggan::orderBy('kode_pelanggan', 'DESC')->first();
-            $nextNumber = 1;
-            
-            if ($lastPelanggan) {
-                // Extract number dari kode_pelanggan (PLG00001 -> 00001)
-                $lastNumber = intval(substr($lastPelanggan->kode_pelanggan, 3));
-                $nextNumber = $lastNumber + 1;
-            }
-            
-            $kodePelanggan = 'PLG' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
-
-            $pelanggan = \App\Models\pelanggan::create([
-                'kode_pelanggan' => $kodePelanggan,
+            $this->pelangganRepo->createWithAutoKode([
                 'nama_pelanggan' => $validated['nama_pelanggan'],
                 'alamat' => $validated['alamat'],
                 'no_telp' => $validated['no_telp'],
@@ -143,9 +141,10 @@ class PelangganController extends Controller
                 'paket_id_internet' => $validated['id_paket']
             ]);
 
-            return response()->json(['message' => 'Pelanggan berhasil ditambahkan'], 200);
+            return response()->json(['success' => true, 'message' => 'Pelanggan berhasil ditambahkan'], 200);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Error: ' . $e->getMessage()], 422);
+            return response()->json(['success' => false, 'message' => 'Error: ' . $e->getMessage()], 422);
         }
     }
 }
+
